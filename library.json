@@ -3,7 +3,7 @@
     "frameworks": "arduino",
     "keywords": "peacefair, pzem, powermeter, v1",
     "description": "Enables communication to Peacefair PZEM-017 v1.0 Power and Energy monitor",
-    "url": "https://github.com/maxzerker/PZEM-017-v1",
+    "url": "https://github.com/MDFreak/md_PZEM-017",
     "authors": [
         {
             "name": "Maxzerker Maxz"
@@ -11,7 +11,7 @@
     ],
     "repository": {
         "type": "git",
-        "url": "https://github.com/maxzerker/PZEM-017-v1"
+        "url": "https://github.com/MDFreak/md_PZEM-017"
     },
     "platforms": "*",
     "version": "1.0.0",
