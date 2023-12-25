@@ -21,6 +21,7 @@
  */
 #if defined(USE_PZEM017_RS485) // to be defined in platformio.ini
   #include <md_PZEM017.h>
+  #include <md_defines.h>
   #include <stdio.h>
   // addresses read registers
     #define REG_VOLTAGE     0x0000
@@ -52,11 +53,17 @@
     #define RESPONSE_SIZE   32
     #define READ_TIMEOUT    100
     #define PZEM_BAUD_RATE  9600
-    #define DEBUG           DEBUG_MODE
+    #ifndef DEBUG
+        #define DEBUG       DEBUG_MODE
+      #endif
   // externals
     extern HardwareSerial Serial;
-  // ------  implementation
-  // Debugging function;
+  /* implementation RS485 multi slave
+
+   */
+  static uint8_t RS485_rtsPin    = -1;   // = 255 = not used
+  static uint8_t PZEM_is_conf    = false;
+  static uint8_t RS485_is_inuse  = false; // semaphore type handshake (atomic single byte)
   void printBuf(uint8_t* buffer, uint16_t len)
     {
       #ifdef DEBUG
@@ -73,15 +80,37 @@
    * @param port Hardware serial to use
    * @param addr Slave address of device
    */
-  md_PZEM017::md_PZEM017(HardwareSerial* port, uint8_t addr)
+  //md_PZEM017::md_PZEM017(HardwareSerial* port, uint8_t addr, uint8_t pin_dir)//, uint8_t addr)
+//              md_PZEM017(HardwareSerial* port, uint8_t pin_dir = 255, uint8_t addr=PZEM_DEFAULT_ADDR);
+  md_PZEM017::md_PZEM017(HardwareSerial& port, uint32_t config, uint8_t rxPin, uint8_t txPin)
     {
-      port->begin(PZEM_BAUD_RATE);
-      this->_serial = port;
-      this->_isSoft = false;
-      init(addr);
+      if (!PZEM_is_conf)
+        {
+          port.begin(PZEM_BAUD_RATE, config, rxPin, txPin);
+          this->_serial  = (Stream*)&port;
+          PZEM_is_conf  = true;
+        }
     }
-
-  bool  md_PZEM017::updateValues()
+  void      md_PZEM017::config(uint8_t addr, uint8_t rtsPin)
+    {
+      if(addr < 0x01 || addr > 0xF8) // Sanity check of address
+        { addr = PZEM_DEFAULT_ADDR; }
+      _addr = addr;
+            //S3VAL("   conf PZeM #", _addr, " is_init", PZEM_is_conf);
+      // Set initial lastRed time so that we read right away
+      _lastInputRead    = 0;
+      _lastInputRead   -= UPDATE_TIME;
+      _lastHoldingRead  = 0;
+      _lastHoldingRead -= UPDATE_TIME;
+      if (rtsPin < 34)
+        {
+          RS485_rtsPin = rtsPin;
+          pinMode(RS485_rtsPin, OUTPUT);
+          digitalWrite(RS485_rtsPin, 1);             // receive
+                //S3VAL("   conf PZeM ready #", _addr, "val", digitalRead(RS485_rtsPin));
+        }
+    }
+  bool      md_PZEM017::updateValues()
     {
       //static uint8_t buffer[] = {0x00, CMD_RIR, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00};
       static uint8_t response[21];
@@ -118,30 +147,59 @@
         //}
       return true;
     }
-  float md_PZEM017::voltage()
+  float     md_PZEM017::voltage()
     { // no automatic update
         // if(!updateValues()) // Update vales if necessary
         //   { return NAN; }// Update did not work, return NAN
       return _currentValues.voltage;
     }
-  float md_PZEM017::current()
+  float     md_PZEM017::current()
     { // no automatic update
         //if(!updateValues())// Update vales if necessary
         //    return NAN; // Update did not work, return NAN
       return _currentValues.current;
     }
-  float md_PZEM017::power()
+  float     md_PZEM017::power()
     { // no automatic update
         // if(!updateValues()) // Update vales if necessary
         //    return NAN; // Update did not work, return NAN
       return _currentValues.power;
     }
   // get Active energy in kWh since last reset
-  float md_PZEM017::energy()
+  float     md_PZEM017::energy()
     { // no automatic update
         //if(!updateValues()) // Update vales if necessary
         //    return NAN; // Update did not work, return NAN
       return _currentValues.energy;
+    }
+  void      md_PZEM017::preTransmission()
+    {
+      if (RS485_rtsPin != -1)
+        { // RTS in use
+          for (uint8_t i = 0 ; i < 3; i++)
+            {
+              if(RS485_is_inuse)
+                { // wait for line
+                  STXT("    preTransmission PZeM wait RTS");
+                  usleep(500);
+                }
+              else
+                {
+                  RS485_is_inuse = _addr;
+                        //S3VAL("    preTransmission PZeM set RTS", RS485_rtsPin, "value", digitalRead(RS485_rtsPin));
+                  digitalWrite(RS485_rtsPin, 1);
+                        //SVAL("    preTransmission PZeM RTS set value", digitalRead(RS485_rtsPin));
+                  break;
+                }
+            }
+        }
+    }
+  void      md_PZEM017::postTransmission()
+    {
+            //S3VAL("    postTransmission PZeM reset RTS", RS485_rtsPin, "value", digitalRead(RS485_rtsPin));
+      digitalWrite(RS485_rtsPin, 0);
+            //SVAL("    postTransmission PZeM RTS reset value", digitalRead(RS485_rtsPin));
+      RS485_is_inuse = 0;
     }
   /* Prepares the 8 byte command buffer and sends
    * @param[in] cmd - Command to send (position 1)
@@ -151,7 +209,7 @@
    *
    * @return success
    */
-  bool md_PZEM017::sendCmd8(uint8_t cmd, uint16_t rAddr, uint16_t val, bool check, uint16_t slave_addr)
+  bool      md_PZEM017::sendCmd8(uint8_t cmd, uint16_t rAddr, uint16_t val, bool check, uint16_t slave_addr)
     {
       uint8_t sendBuffer[8]; // Send buffer
       uint8_t respBuffer[8]; // Response buffer (only used when check is true)
@@ -168,7 +226,10 @@
       sendBuffer[4] = (val >> 8) & 0xFF;       // Set high byte of register value
       sendBuffer[5] = (val) & 0xFF;            // Set low byte =//=
       setCRC(sendBuffer, 8);                   // Set CRC of frame
+      preTransmission();
       _serial->write(sendBuffer, 8); // send frame
+      _serial->flush();
+      postTransmission();
       if(check)
         {
           if(!receive(respBuffer, 8)) // if check enabled, read the response
@@ -188,47 +249,34 @@
    * @param[in] addr New device address 0x01-0xF7
    * @return success
    */
-  bool md_PZEM017::setAddress(uint8_t addr)
+  bool      md_PZEM017::setAddress(uint8_t addr)
     {
       if(addr < 0x01 || addr > 0xF7) // sanity check
         { return false; }
       // Write the new address to the address register
       if(!sendCmd8(CMD_WSR, WREG_ADDR, addr, true))
-        {
-          return false;
-          _addr = addr; // If successful, update the current slave address
-          return true;
-        }
+        { return false; }
+      _addr = addr; // If successful, update the current slave address
+      return true;
+    }
   // Get the current device address
-  uint8_t md_PZEM017::getAddress()
+  uint8_t   md_PZEM017::getAddress()
     { return _addr; }
   // Is the alarm set
-  bool md_PZEM017::isHighvoltAlarmOn()
+  bool      md_PZEM017::isHighvoltAlarmOn()
     {
       //if(!updateValues()) // Update vales if necessary
       //    return NAN; // Update did not work, return NAN
       return _currentValues.HVAlarms != 0x0000;
     }
-  bool md_PZEM017::isLowvoltAlarmOn()
+  bool      md_PZEM017::isLowvoltAlarmOn()
     {
       //if(!updateValues()) // Update vales if necessary
       //    return NAN; // Update did not work, return NAN
       return _currentValues.LVAlarms != 0x0000;
     }
-  // md_PZEM017::init
-  void md_PZEM017::init(uint8_t addr)
-    {
-      if(addr < 0x01 || addr > 0xF8) // Sanity check of address
-        { addr = PZEM_DEFAULT_ADDR; }
-      _addr = addr;
-      // Set initial lastRed time so that we read right away
-      _lastInputRead    = 0;
-      _lastInputRead   -= UPDATE_TIME;
-      _lastHoldingRead  = 0;
-      _lastHoldingRead -= UPDATE_TIME;
-    }
   // md_PZEM017::getParameters()
-  bool md_PZEM017::getParameters()
+  bool      md_PZEM017::getParameters()
     {
       static uint8_t response[13];
       // If we read before the update time limit, do not update
@@ -249,34 +297,33 @@
                                          | (uint32_t)response[10]);
       // Record current time as _lastHoldingRead
       _lastHoldingRead = millis();
-
       return true;
     }
-  float md_PZEM017::getHighvoltAlarmValue()
+  float     md_PZEM017::getHighvoltAlarmValue()
     {
       //if(!getParameters())
       //    return NAN;
       return _parameterValues.HVAlarmVoltage;
     }
-  float md_PZEM017::getLowvoltAlarmValue()
+  float     md_PZEM017::getLowvoltAlarmValue()
     {
       //if(!getParameters())
       //    return NAN;
       return _parameterValues.LVAlarmVoltage;
     }
-  uint16_t md_PZEM017::getHoldingAddress()
+  uint16_t  md_PZEM017::getHoldingAddress()
     {
       //if(!getParameters())
       //    return NAN;
       return _parameterValues.address;
     }
-  uint16_t md_PZEM017::getShunttype()
+  uint16_t  md_PZEM017::getShunttype()
     {
       // if(!getParameters())
       //    return NAN;
       return _parameterValues.shunttype;
     }
-  bool md_PZEM017::resetEnergy()
+  bool      md_PZEM017::resetEnergy()
     {
       uint8_t buffer[] = {0x00, CMD_REST, 0x00, 0x00};
       uint8_t reply[5];
@@ -289,18 +336,18 @@
       return true;
     }
   // Set alarm threshold in volts
-  bool md_PZEM017::setShuntType(uint16_t type)
+  bool      md_PZEM017::setShuntType(uint16_t type)
     {
+      bool ret = 0;
       if (type < 0 ) // Sanity check
         { type = 0; }
       if (type > 3)
         { type = 3; }
       // Write shunt type to the holding register
-      if(!sendCmd8(CMD_WSR, WREG_SHUNT, type, true))
-        { return false; }
-      return true;
+      ret = sendCmd8(CMD_WSR, WREG_SHUNT, type, true);
+      return ret;
     }
-  bool md_PZEM017::setHighvoltAlarm(uint16_t volts)
+  bool      md_PZEM017::setHighvoltAlarm(uint16_t volts)
     {
       if (volts < 500) // Sanity check
         { volts = 500; }
@@ -311,7 +358,7 @@
         { return false; }
       return true;
     }
-  bool md_PZEM017::setLowvoltAlarm(uint16_t volts)
+  bool      md_PZEM017::setLowvoltAlarm(uint16_t volts)
     {
       if (volts < 100) // Sanity check
         { volts = 100; }
@@ -328,7 +375,7 @@
    * @param[in] len Max number of bytes to read
    * @return number of bytes read
    */
-  uint16_t md_PZEM017::receive(uint8_t *resp, uint16_t len)
+  uint16_t  md_PZEM017::receive(uint8_t *resp, uint16_t len)
     {
       unsigned long startTime = millis(); // Start time for Timeout
       uint8_t index = 0; // Bytes we have read
@@ -352,7 +399,7 @@
    * @param[in] len  Length of the respBuffer including 2 bytes for CRC
    * @return is the buffer check sum valid
    */
-  bool md_PZEM017::checkCRC(const uint8_t *buf, uint16_t len)
+  bool      md_PZEM017::checkCRC(const uint8_t *buf, uint16_t len)
     {
       if(len <= 2) // Sanity check
         { return false; }
@@ -365,7 +412,7 @@
    * @param[out] data Memory buffer containing the frame to checksum and write CRC to
    * @param[in] len  Length of the respBuffer including 2 bytes for CRC
    */
-  void md_PZEM017::setCRC(uint8_t *buf, uint16_t len)
+  void      md_PZEM017::setCRC(uint8_t *buf, uint16_t len)
     {
       if(len <= 2) // Sanity check
         { return; }
@@ -416,7 +463,7 @@
    * @param[in] len  Length of the respBuffer
    * @return Calculated CRC
    */
-  uint16_t md_PZEM017::CRC16(const uint8_t *data, uint16_t len)
+  uint16_t  md_PZEM017::CRC16(const uint8_t *data, uint16_t len)
     {
       uint8_t nTemp; // CRC table index
       uint16_t crc = 0xFFFF; // Default value
@@ -433,7 +480,7 @@
    * Prints any found device addresses on the bus.
    * Can be disabled by defining PZEM017_DISABLE_SEARCH
    */
-  void md_PZEM017::search()
+  void      md_PZEM017::search()
     {
       #if ( not defined(PZEM017_DISABLE_SEARCH))
           static uint8_t response[7];

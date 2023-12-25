@@ -1,4 +1,4 @@
-/*
+/* Copyright (c) 2023 Martin Dorfner (for md_PZEM017)
   Copyright (c) 2020 Maxz Maxzerker (for PZEM-017)
   Copyright (c) 2019 Jakub Mandula
 
@@ -19,41 +19,58 @@
   IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
-
-/*
- * PZEM-004Tv30.h
- *
- * Interface library for the upgraded version of PZEM-004T v3.0
- * Based on the PZEM004T library by @olehs https://github.com/olehs/PZEM004T
- *
- * Author: Jakub Mandula https://github.com/mandulaj
- *
- *
-  */
-
-/*
- * PZEM-017Tv1.h
- *
- * Interface library for PZEM-017 v1.0
- * Based on the PZEM004T library by Jakub Mandula https://github.com/mandulaj
- *
- * Author: Maxz Maxzerker https://github.com/maxzerker
- *
- *
+/* Authors *********************************
+ ******************************************
+  PZEM-004Tv30.h
+  Interface library for the upgraded version of PZEM-004T v3.0
+  Based on the PZEM004T library by @olehs https://github.com/olehs/PZEM004T
+  Author: Jakub Mandula https://github.com/mandulaj
+ ******************************************
+  PZEM-017Tv1.h
+  Interface library for PZEM-017 v1.0
+  Based on the PZEM004T library by Jakub Mandula https://github.com/mandulaj
+  Author: Maxz Maxzerker https://github.com/maxzerker
+ ******************************************
+  md_PZEM017.h
+  Interface library for PZEM-003, PZEM-017
+  Extended library for PZEM-017 v1.0 from Maxz Maxzerker
+  Author: Martin Dorfner https://github.com/mdfreak
  */
-
+/* Description md_PZEM017 v0.1 ************
+ ** additional features v0.01
+    - multiple slave usage with single RS485 bus      TODO ongoing
+      - shared Serial usage for all md_PZEM017 objects -> see class md_PZEM017 constructor
+    - introduce RTS Handshake using MAX485/RE-DE      TODO ongoing
+      keep communication without RTS (default) -> RS485_rtsPin = 255
+ ** TODO in future
+    - introduce task used for measurement cycling
+ ** changes to PZEM-017 v1.0 from Maxz Maxzerker
+    - remove SoftwareSerial - not necessary for ESP32 TODO ongoing
+ */
 #if defined(USE_PZEM017_RS485)
   #ifndef _MD_PZEM017_H_
       #define _MD_PZEM017_H_
 
+      #define MD_PZEM017_VERSION   0.10
+
       #include <Arduino.h>
-      // #define PZEM004_NO_SWSERIAL
+      // #define PZEM004_NO_SWSERIAL not used
       #define PZEM_DEFAULT_ADDR    0x01
 
       class md_PZEM017
         {
           public:
-            md_PZEM017(HardwareSerial* port, uint8_t addr=PZEM_DEFAULT_ADDR);
+            /*
+                // Negative Pin Number will keep it unmodified, thus this function can set individual pins
+                // SetPins shall be called after Serial begin()
+                void HardwareSerial::begin(unsigned long baud, uint32_t config, int8_t rxPin, int8_t txPin, bool invert, unsigned long timeout_ms, uint8_t rxfifo_full_thrhd)
+                bool setPins(int8_t rxPin, int8_t txPin, int8_t ctsPin = -1, int8_t rtsPin = -1);
+                // Enables or disables Hardware Flow Control using RTS and/or CTS pins (must use setAllPins() before)
+                bool setHwFlowCtrlMode(uint8_t mode = HW_FLOWCTRL_CTS_RTS, uint8_t threshold = 64);   // 64 is half FIFO Length
+                // Used to set RS485 modes such as UART_MODE_RS485_HALF_DUPLEX for Auto RTS function on ESP32
+             */
+            md_PZEM017(HardwareSerial& port, uint32_t config = SERIAL_8N1, uint8_t rxPin = -1, uint8_t txPin = -1);
+            //md_PZEM017(HardwareSerial* port, uint8_t addr, uint8_t pin_dir = -1);
             ~md_PZEM017() {}
 
             bool      updateValues();    // Get most up to date values from device registers and cache them
@@ -62,6 +79,10 @@
             float     power();
             float     energy();
             //----------------
+            void      config(uint8_t addr = PZEM_DEFAULT_ADDR, uint8_t rtsPin = -1 ); // Init common to all constructors
+            //void      begin();
+            void      preTransmission();
+            void      postTransmission();
             bool      getParameters();
             uint16_t  getHoldingAddress();
             uint8_t   getAddress();
@@ -77,9 +98,8 @@
             bool      resetEnergy();
             void      search();
           private:
-            Stream*   _serial; // Serial interface
-            bool      _isSoft;    // Is serial interface software
-            uint8_t   _addr;   // Device address
+            Stream*   _serial;  // Serial interface
+            uint8_t   _addr;    // Device address
             struct // _currentValues
               {
                 float     voltage;
@@ -98,7 +118,6 @@
               } _parameterValues; // Parameter values
             uint64_t  _lastInputRead; // Last time input values were updated
             uint64_t  _lastHoldingRead; // Last time input values were updated
-            void      init(uint8_t addr); // Init common to all constructors
             uint16_t  receive(uint8_t *resp, uint16_t len); // Receive len bytes into a buffer
             bool      sendCmd8(uint8_t cmd, uint16_t rAddr, uint16_t val, bool check=false, uint16_t slave_addr=0xFFFF); // Send 8 byte command
             void      setCRC(uint8_t *buf, uint16_t len);           // Set the CRC for a buffer
