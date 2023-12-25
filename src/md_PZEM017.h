@@ -83,10 +83,10 @@
             //void      begin();
             void      preTransmission();
             void      postTransmission();
-            bool      getParameters();
+            bool      getParameters(uint16_t slave_addr=0xFFFF);
             uint16_t  getHoldingAddress();
             uint8_t   getAddress();
-            bool      setAddress(uint8_t addr);
+            bool      setAddress(uint8_t addr, uint16_t slave_addr=0xFFFF);
             bool      setHighvoltAlarm(uint16_t volts);
             float     getHighvoltAlarmValue();
             bool      isHighvoltAlarmOn();
@@ -96,7 +96,7 @@
             bool      setShuntType(uint16_t type);
             uint16_t  getShunttype();
             bool      resetEnergy();
-            void      search();
+            uint8_t   search(uint8_t maxaddr = 0xF8, uint8_t* paddrList = NULL, uint8_t* pshuntList = NULL);
           private:
             Stream*   _serial;  // Serial interface
             uint8_t   _addr;    // Device address

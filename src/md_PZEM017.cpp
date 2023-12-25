@@ -249,12 +249,12 @@
    * @param[in] addr New device address 0x01-0xF7
    * @return success
    */
-  bool      md_PZEM017::setAddress(uint8_t addr)
+  bool      md_PZEM017::setAddress(uint8_t addr, uint16_t slave_addr)
     {
       if(addr < 0x01 || addr > 0xF7) // sanity check
         { return false; }
       // Write the new address to the address register
-      if(!sendCmd8(CMD_WSR, WREG_ADDR, addr, true))
+      if(!sendCmd8(CMD_WSR, WREG_ADDR, addr, true, slave_addr))
         { return false; }
       _addr = addr; // If successful, update the current slave address
       return true;
@@ -276,14 +276,14 @@
       return _currentValues.LVAlarms != 0x0000;
     }
   // md_PZEM017::getParameters()
-  bool      md_PZEM017::getParameters()
+  bool      md_PZEM017::getParameters(uint16_t slave_addr)
     {
       static uint8_t response[13];
       // If we read before the update time limit, do not update
       if(_lastHoldingRead + UPDATE_TIME > millis())
         { return true; }
       // Read 3 registers starting at 0x00
-      sendCmd8(CMD_RHR, 0x00, 0x04, false);
+      sendCmd8(CMD_RHR, 0x00, 0x04, false, slave_addr);
       if(receive(response, 13) != 13) // Something went wrong
         { return false; }
       // Update the current paramaters
@@ -319,8 +319,8 @@
     }
   uint16_t  md_PZEM017::getShunttype()
     {
-      // if(!getParameters())
-      //    return NAN;
+      //if(!getParameters())
+      //  { return NAN; }
       return _parameterValues.shunttype;
     }
   bool      md_PZEM017::resetEnergy()
@@ -480,11 +480,17 @@
    * Prints any found device addresses on the bus.
    * Can be disabled by defining PZEM017_DISABLE_SEARCH
    */
-  void      md_PZEM017::search()
+  uint8_t   md_PZEM017::search(uint8_t maxaddr, uint8_t* paddrList, uint8_t* pshuntList)
     {
       #if ( not defined(PZEM017_DISABLE_SEARCH))
           static uint8_t response[7];
-          for(uint16_t addr = 0x01; addr <= 0xF8; addr++)
+          uint8_t* pList = paddrList;
+          if (pList)
+            {
+              pList[0] = 0;
+              pList++;
+            }
+          for(uint16_t addr = 0x01; addr <= maxaddr; addr++)
             {
               //Serial.println(addr);
               sendCmd8(CMD_RIR, 0x00, 0x01, false, addr);
@@ -492,10 +498,23 @@
                 { continue; }
               else
                 {
-                  Serial.print("Device on addr: ");
-                  Serial.print(addr);
+                  getParameters(addr);
+                  SVAL("  Device on addr: ",(uint16_t )_parameterValues.address);
+                  if (pList)
+                    {
+                      *pList = _parameterValues.address;
+                      pList++;
+                      paddrList[0]++;
+                    }
+                  if (pshuntList)
+                    {
+                      *pshuntList = _parameterValues.shunttype;
+                      pshuntList++;
+                    }
                 }
             }
+          return paddrList[0];
         #endif
+      return -1;
     }
 #endif // USE_PZEM017_RS485
