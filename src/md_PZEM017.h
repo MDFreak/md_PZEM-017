@@ -39,8 +39,11 @@
 /* Description md_PZEM017 v0.1 ************
  ** additional features v0.01
     - multiple slave usage with single RS485 bus      TODO ongoing
-      - shared Serial usage for all md_PZEM017 objects -> see class md_PZEM017 constructor
-    - introduce RTS Handshake using MAX485/RE-DE      TODO ongoing
+      - shared Serial usage for all md_PZEM017 objects
+      - data structure change to slave specific structure
+        data static memory is to provide from main module via constructor
+      -> see class md_PZEM017 constructor
+    - introduce RTS Handshake using MAX485/RE-DE      v0.01
       keep communication without RTS (default) -> RS485_rtsPin = 255
  ** TODO in future
     - introduce task used for measurement cycling
@@ -52,11 +55,27 @@
       #define _MD_PZEM017_H_
 
       #define MD_PZEM017_VERSION   0.10
-
       #include <Arduino.h>
       // #define PZEM004_NO_SWSERIAL not used
       #define PZEM_DEFAULT_ADDR    0x01
-
+      typedef struct // _SlaveData
+        { // device params
+            uint16_t  devaddr;   // slave address of device
+            uint16_t  devtype;   // includes shunt type
+            float     HVAlarmVoltage;
+            float     LVAlarmVoltage;
+          // device actual values
+            float     voltage;
+            float     current;
+            float     power;
+            float     energy;
+            float     frequency;
+            float     pf;
+            uint16_t  HVAlarms;
+            uint16_t  LVAlarms;
+          // runtime data
+            uint64_t  lastInputRead; // Last time input values were updated
+        } RS485_SlaveData_t; // Parameter values
       class md_PZEM017
         {
           public:
@@ -69,55 +88,58 @@
                 bool setHwFlowCtrlMode(uint8_t mode = HW_FLOWCTRL_CTS_RTS, uint8_t threshold = 64);   // 64 is half FIFO Length
                 // Used to set RS485 modes such as UART_MODE_RS485_HALF_DUPLEX for Auto RTS function on ESP32
              */
-            md_PZEM017(HardwareSerial& port, uint32_t config = SERIAL_8N1, uint8_t rxPin = -1, uint8_t txPin = -1);
+            md_PZEM017(HardwareSerial& port,  RS485_SlaveData_t* slaveData, uint8_t slaveCount, uint32_t config = SERIAL_8N1,
+                       uint8_t rtsPin = -1,   uint8_t rxPin = -1,  uint8_t txPin = -1);
             //md_PZEM017(HardwareSerial* port, uint8_t addr, uint8_t pin_dir = -1);
             ~md_PZEM017() {}
 
-            bool      updateValues();    // Get most up to date values from device registers and cache them
-            float     voltage();
-            float     current();
-            float     power();
-            float     energy();
+            bool      updateValues(uint8_t slaveIdx = 0);    // Get most up to date values from device registers and cache them
+            float     voltage(uint8_t slaveIdx = 0);
+            float     current(uint8_t slaveIdx = 0);
+            float     power(uint8_t slaveIdx = 0);
+            float     energy(uint8_t slaveIdx = 0);
             //----------------
-            void      config(uint8_t addr = PZEM_DEFAULT_ADDR, uint8_t rtsPin = -1 ); // Init common to all constructors
+            void      config(uint8_t addr = PZEM_DEFAULT_ADDR, uint8_t slaveIdx = 0); // Init common to all constructors
             //void      begin();
             void      preTransmission();
             void      postTransmission();
-            bool      getParameters(uint16_t slave_addr=0xFFFF);
-            uint16_t  getHoldingAddress();
-            uint8_t   getAddress();
-            bool      setAddress(uint8_t addr, uint16_t slave_addr=0xFFFF);
-            bool      setHighvoltAlarm(uint16_t volts);
-            float     getHighvoltAlarmValue();
-            bool      isHighvoltAlarmOn();
-            bool      setLowvoltAlarm(uint16_t volts);
-            float     getLowvoltAlarmValue();
-            bool      isLowvoltAlarmOn();
-            bool      setShuntType(uint16_t type);
-            uint16_t  getShunttype();
-            bool      resetEnergy();
+            bool      getParameters(uint8_t slaveIdx = 0, RS485_SlaveData_t* slaveData = NULL );
+            uint8_t   getAddress(uint8_t slaveIdx = 0);
+            bool      setAddress(uint16_t slave_addr, uint8_t slaveIdx = 0);
+            bool      setHighvoltAlarm(uint16_t volts, uint8_t slaveIdx = 0);
+            float     getHighvoltAlarmValue(uint8_t slaveIdx = 0);
+            bool      isHighvoltAlarmOn(uint8_t slaveIdx = 0);
+            bool      setLowvoltAlarm(uint16_t volts, uint8_t slaveIdx = 0);
+            float     getLowvoltAlarmValue(uint8_t slaveIdx = 0);
+            bool      isLowvoltAlarmOn(uint8_t slaveIdx = 0);
+            bool      setShuntType(uint16_t type, uint8_t slaveIdx = 0);
+            uint16_t  getDevicetype(uint8_t slaveIdx = 0);
+            bool      resetEnergy(uint8_t slaveIdx = 0);
             uint8_t   search(uint8_t maxaddr = 0xF8, uint8_t* paddrList = NULL, uint8_t* pshuntList = NULL);
           private:
-            Stream*   _serial;  // Serial interface
-            uint8_t   _addr;    // Device address
-            struct // _currentValues
-              {
-                float     voltage;
-                float     current;
-                float     power;
-                float     energy;
-                uint16_t  HVAlarms;
-                uint16_t  LVAlarms;
-              } _currentValues; // Measured values
-            struct // _parameterValues
-              {
-                float     HVAlarmVoltage;
-                float     LVAlarmVoltage;
-                uint16_t  address;
-                uint16_t  shunttype;
-              } _parameterValues; // Parameter values
-            uint64_t  _lastInputRead; // Last time input values were updated
-            uint64_t  _lastHoldingRead; // Last time input values were updated
+            Stream*            _serial      = NULL;;  // Serial interface
+            uint8_t            _slavecount  = 0; // count of slaves
+            RS485_SlaveData_t* _slavedata   = NULL;
+            uint8_t            _rtsPin      = -1;
+                  //uint8_t   _addr;    // Device address
+                  //struct // _currentValues
+                  //  {
+                  //    float     voltage;
+                  //    float     current;
+                  //    float     power;
+                  //    float     energy;
+                  //    uint16_t  HVAlarms;
+                  //    uint16_t  LVAlarms;
+                  //  } _currentValues; // Measured values
+                  //struct // _parameterValues
+                  //  {
+                  //    float     HVAlarmVoltage;
+                  //    float     LVAlarmVoltage;
+                  //    uint16_t  address;
+                  //    uint16_t  shunttype;
+                  //  } _parameterValues; // Parameter values
+                  //uint64_t  _lastInputRead; // Last time input values were updated
+                  //uint64_t  _lastHoldingRead; // Last time input values were updated
             uint16_t  receive(uint8_t *resp, uint16_t len); // Receive len bytes into a buffer
             bool      sendCmd8(uint8_t cmd, uint16_t rAddr, uint16_t val, bool check=false, uint16_t slave_addr=0xFFFF); // Send 8 byte command
             void      setCRC(uint8_t *buf, uint16_t len);           // Set the CRC for a buffer

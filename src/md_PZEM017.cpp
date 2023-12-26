@@ -48,6 +48,11 @@
     #define SHUNT_50A       0x0001
     #define SHUNT_200A      0x0002
     #define SHUNT_300A      0x0003
+    #define SHUNT_10A       0x0004
+    #define PZEM003         0x0300
+    #define PZEM004         0x0400
+    #define PZEM017         0x1100
+
   // comm defines
     #define UPDATE_TIME     200
     #define RESPONSE_SIZE   32
@@ -61,9 +66,6 @@
   /* implementation RS485 multi slave
 
    */
-  static uint8_t RS485_rtsPin    = -1;   // = 255 = not used
-  static uint8_t PZEM_is_conf    = false;
-  static uint8_t RS485_is_inuse  = false; // semaphore type handshake (atomic single byte)
   void printBuf(uint8_t* buffer, uint16_t len)
     {
       #ifdef DEBUG
@@ -82,112 +84,109 @@
    */
   //md_PZEM017::md_PZEM017(HardwareSerial* port, uint8_t addr, uint8_t pin_dir)//, uint8_t addr)
 //              md_PZEM017(HardwareSerial* port, uint8_t pin_dir = 255, uint8_t addr=PZEM_DEFAULT_ADDR);
-  md_PZEM017::md_PZEM017(HardwareSerial& port, uint32_t config, uint8_t rxPin, uint8_t txPin)
+  //md_PZEM017::md_PZEM017(HardwareSerial& port, uint32_t config, uint8_t rxPin, uint8_t txPin)
+  md_PZEM017::md_PZEM017(HardwareSerial& port,  RS485_SlaveData_t* slaveData, uint8_t slaveCount, uint32_t config, uint8_t rtsPin,   uint8_t rxPin,  uint8_t txPin)
     {
-      if (!PZEM_is_conf)
-        {
-          port.begin(PZEM_BAUD_RATE, config, rxPin, txPin);
-          this->_serial  = (Stream*)&port;
-          PZEM_is_conf  = true;
-        }
-    }
-  void      md_PZEM017::config(uint8_t addr, uint8_t rtsPin)
-    {
-      if(addr < 0x01 || addr > 0xF8) // Sanity check of address
-        { addr = PZEM_DEFAULT_ADDR; }
-      _addr = addr;
-            //S3VAL("   conf PZeM #", _addr, " is_init", PZEM_is_conf);
-      // Set initial lastRed time so that we read right away
-      _lastInputRead    = 0;
-      _lastInputRead   -= UPDATE_TIME;
-      _lastHoldingRead  = 0;
-      _lastHoldingRead -= UPDATE_TIME;
+      port.begin(PZEM_BAUD_RATE, config, rxPin, txPin);
+      this->_serial  = (Stream*)&port;
+      this->_slavedata = slaveData;
+      this->_slavecount = slaveCount;
       if (rtsPin < 34)
         {
-          RS485_rtsPin = rtsPin;
-          pinMode(RS485_rtsPin, OUTPUT);
-          digitalWrite(RS485_rtsPin, 1);             // receive
+          _rtsPin = rtsPin;
+          pinMode(_rtsPin, OUTPUT);
+          digitalWrite(_rtsPin, 1);             // receive
                 //S3VAL("   conf PZeM ready #", _addr, "val", digitalRead(RS485_rtsPin));
         }
     }
-  bool      md_PZEM017::updateValues()
+  void      md_PZEM017::config(uint8_t addr, uint8_t slaveIdx)
+    {
+      if (slaveIdx >= _slavecount)   { return; }
+      if(addr < 0x01 || addr > 0xF8) { addr = PZEM_DEFAULT_ADDR; } // Sanity check of address
+      _slavedata[slaveIdx].devaddr = addr;
+            S2VAL("   conf PZeM #", addr, " is_init");
+      // Set initial lastRed time so that we read right away
+      //lastInputRead    = 0;
+      //lastInputRead   -= UPDATE_TIME;
+    }
+  bool      md_PZEM017::updateValues(uint8_t slaveIdx)
     {
       //static uint8_t buffer[] = {0x00, CMD_RIR, 0x00, 0x00, 0x00, 0x06, 0x00, 0x00};
       static uint8_t response[21];
       // If we read before the update time limit, do not update
-      if(_lastInputRead + UPDATE_TIME > millis())
+      if(_slavedata[slaveIdx].lastInputRead + UPDATE_TIME > millis())
         { return true; }
       // Read 10 registers starting at 0x00 (no check)
-      sendCmd8(CMD_RIR, 0x00, 0x08, false);
+      sendCmd8(CMD_RIR, 0x00, 0x08, false, _slavedata[slaveIdx].devaddr);
       if(receive(response, 21) != 21)
         { // Something went wrong
           return false;
         }
       // Update the current values
-      _currentValues.voltage = ((uint32_t)response[3] << 8 | // Raw voltage in 0.01V
-                                (uint32_t)response[4])/100.0;
-      _currentValues.current = ((uint32_t)response[5] << 8 | // Raw voltage in 0.01A
-                                (uint32_t)response[6])/100.0;
-      _currentValues.power =   ((uint32_t)response[7] << 8 | // Raw power in 0.1W
-                                (uint32_t)response[8] |
-                                (uint32_t)response[9] << 24 |
-                                (uint32_t)response[10] << 16) / 10.0;
-      _currentValues.energy =  ((uint32_t)response[11] << 8 | // Raw Energy in 1Wh
-                                (uint32_t)response[12] |
-                                (uint32_t)response[13] << 24 |
-                                (uint32_t)response[14] << 16) / 1000.0;
-      _currentValues.HVAlarms =  ((uint32_t)response[15] << 8 | // Raw alarm value
-                                 (uint32_t)response[16]);
-      _currentValues.LVAlarms =  ((uint32_t)response[17] << 8 | // Raw alarm value
-                                 (uint32_t)response[18]);
-      _lastInputRead = millis();
+      _slavedata[slaveIdx].voltage =  ((uint32_t)response[3] << 8 | // Raw voltage in 0.01V
+                                        (uint32_t)response[4])/100.0;
+      _slavedata[slaveIdx].current =  ((uint32_t)response[5] << 8 | // Raw voltage in 0.01A
+                                        (uint32_t)response[6])/100.0;
+      _slavedata[slaveIdx].power =    ((uint32_t)response[7] << 8 | // Raw power in 0.1W
+                                        (uint32_t)response[8] |
+                                        (uint32_t)response[9] << 24 |
+                                        (uint32_t)response[10] << 16) / 10.0;
+      _slavedata[slaveIdx].energy =   ((uint32_t)response[11] << 8 | // Raw Energy in 1Wh
+                                        (uint32_t)response[12] |
+                                        (uint32_t)response[13] << 24 |
+                                        (uint32_t)response[14] << 16) / 1000.0;
+      _slavedata[slaveIdx].HVAlarms = ((uint32_t)response[15] << 8 | // Raw alarm value
+                                        (uint32_t)response[16]);
+      _slavedata[slaveIdx].LVAlarms = ((uint32_t)response[17] << 8 | // Raw alarm value
+                                        (uint32_t)response[18]);
+      _slavedata[slaveIdx].lastInputRead = millis();
       //for(int i = 0; i < sizeof(response); i++)
         //{
         //  Serial.println(response[i]);
         //}
       return true;
     }
-  float     md_PZEM017::voltage()
+  float     md_PZEM017::voltage(uint8_t slaveIdx)
     { // no automatic update
         // if(!updateValues()) // Update vales if necessary
         //   { return NAN; }// Update did not work, return NAN
-      return _currentValues.voltage;
+      return _slavedata[slaveIdx].voltage;
     }
-  float     md_PZEM017::current()
+  float     md_PZEM017::current(uint8_t slaveIdx)
     { // no automatic update
         //if(!updateValues())// Update vales if necessary
         //    return NAN; // Update did not work, return NAN
-      return _currentValues.current;
+      return _slavedata[slaveIdx].current;
     }
-  float     md_PZEM017::power()
+  float     md_PZEM017::power(uint8_t slaveIdx)
     { // no automatic update
         // if(!updateValues()) // Update vales if necessary
         //    return NAN; // Update did not work, return NAN
-      return _currentValues.power;
+      return _slavedata[slaveIdx].power;
     }
   // get Active energy in kWh since last reset
-  float     md_PZEM017::energy()
+  float     md_PZEM017::energy(uint8_t slaveIdx)
     { // no automatic update
         //if(!updateValues()) // Update vales if necessary
         //    return NAN; // Update did not work, return NAN
-      return _currentValues.energy;
+      return _slavedata[slaveIdx].energy;
     }
   void      md_PZEM017::preTransmission()
     {
-      if (RS485_rtsPin != -1)
+      if (_rtsPin != -1)
         { // RTS in use
           for (uint8_t i = 0 ; i < 3; i++)
             {
-              if(RS485_is_inuse)
-                { // wait for line
-                  STXT("    preTransmission PZeM wait RTS");
-                  usleep(500);
-                }
-              else
+              //if(RS485_is_inuse)
+              //  { // wait for line
+              //    STXT("    preTransmission PZeM wait RTS");
+              //    usleep(500);
+              //  }
+              //else
                 {
-                  RS485_is_inuse = _addr;
+                  //RS485_is_inuse = _addr;
                         //S3VAL("    preTransmission PZeM set RTS", RS485_rtsPin, "value", digitalRead(RS485_rtsPin));
-                  digitalWrite(RS485_rtsPin, 1);
+                  digitalWrite(_rtsPin, 1);
                         //SVAL("    preTransmission PZeM RTS set value", digitalRead(RS485_rtsPin));
                   break;
                 }
@@ -197,9 +196,9 @@
   void      md_PZEM017::postTransmission()
     {
             //S3VAL("    postTransmission PZeM reset RTS", RS485_rtsPin, "value", digitalRead(RS485_rtsPin));
-      digitalWrite(RS485_rtsPin, 0);
+      digitalWrite(_rtsPin, 0);
             //SVAL("    postTransmission PZeM RTS reset value", digitalRead(RS485_rtsPin));
-      RS485_is_inuse = 0;
+      //RS485_is_inuse = 0;
     }
   /* Prepares the 8 byte command buffer and sends
    * @param[in] cmd - Command to send (position 1)
@@ -213,12 +212,12 @@
     {
       uint8_t sendBuffer[8]; // Send buffer
       uint8_t respBuffer[8]; // Response buffer (only used when check is true)
-      if (   (slave_addr == 0xFFFF)
-          || (slave_addr < 0x01)
-          || (slave_addr > 0xF7))
-        {
-          slave_addr = _addr;
-        }
+      //if (   (slave_addr == 0xFFFF)
+      //    || (slave_addr < 0x01)
+      //    || (slave_addr > 0xF7))
+      //  {
+      //    slave_addr = addr;
+      //  }
       sendBuffer[0] = slave_addr;              // Set slave address
       sendBuffer[1] = cmd;                     // Set command
       sendBuffer[2] = (rAddr >> 8) & 0xFF;     // Set high byte of register address
@@ -249,85 +248,80 @@
    * @param[in] addr New device address 0x01-0xF7
    * @return success
    */
-  bool      md_PZEM017::setAddress(uint8_t addr, uint16_t slave_addr)
+  bool      md_PZEM017::setAddress(uint16_t slave_addr, uint8_t slaveIdx)
     {
-      if(addr < 0x01 || addr > 0xF7) // sanity check
-        { return false; }
+      //if(addr < 0x01 || addr > 0xF7) // sanity check
+      //  { return false; }
       // Write the new address to the address register
-      if(!sendCmd8(CMD_WSR, WREG_ADDR, addr, true, slave_addr))
+      if(!sendCmd8(CMD_WSR, WREG_ADDR, _slavedata[slaveIdx].devaddr, true, slave_addr))
         { return false; }
-      _addr = addr; // If successful, update the current slave address
+      _slavedata[slaveIdx].devaddr = slave_addr; // If successful, update the current slave address
       return true;
     }
   // Get the current device address
-  uint8_t   md_PZEM017::getAddress()
-    { return _addr; }
+  uint8_t   md_PZEM017::getAddress(uint8_t slaveIdx)
+    { return _slavedata[slaveIdx].devaddr; }
   // Is the alarm set
-  bool      md_PZEM017::isHighvoltAlarmOn()
+  bool      md_PZEM017::isHighvoltAlarmOn(uint8_t slaveIdx)
     {
       //if(!updateValues()) // Update vales if necessary
       //    return NAN; // Update did not work, return NAN
-      return _currentValues.HVAlarms != 0x0000;
+      return _slavedata[slaveIdx].HVAlarms != 0x0000;
     }
-  bool      md_PZEM017::isLowvoltAlarmOn()
+  bool      md_PZEM017::isLowvoltAlarmOn(uint8_t slaveIdx)
     {
       //if(!updateValues()) // Update vales if necessary
       //    return NAN; // Update did not work, return NAN
-      return _currentValues.LVAlarms != 0x0000;
+      return _slavedata[slaveIdx].LVAlarms != 0x0000;
     }
   // md_PZEM017::getParameters()
-  bool      md_PZEM017::getParameters(uint16_t slave_addr)
+  bool      md_PZEM017::getParameters(uint8_t slaveIdx, RS485_SlaveData_t* slaveData)
     {
       static uint8_t response[13];
+      if (!slaveData)
+        {
+          slaveData = &_slavedata[slaveIdx];
+        }
       // If we read before the update time limit, do not update
-      if(_lastHoldingRead + UPDATE_TIME > millis())
-        { return true; }
       // Read 3 registers starting at 0x00
-      sendCmd8(CMD_RHR, 0x00, 0x04, false, slave_addr);
+      sendCmd8(CMD_RHR, 0x00, 0x04, false, slaveData->devaddr);
       if(receive(response, 13) != 13) // Something went wrong
         { return false; }
       // Update the current paramaters
-      _parameterValues.HVAlarmVoltage = (  (uint32_t)response[3] << 8    // Raw voltage in 0.01V
-                                         | (uint32_t)response[4])/100.0;
-      _parameterValues.LVAlarmVoltage = (  (uint32_t)response[5] << 8    // Raw voltage in 0.01V
-                                         | (uint32_t)response[6])/100.0;
-      _parameterValues.address =        (  (uint32_t)response[7] << 8    // Raw address 0x00-0xf7
-                                         | (uint32_t)response[8]);
-      _parameterValues.shunttype =      (  (uint32_t)response[9] << 8    // Shunt type 0x0000 - 0x0003 (100A/50A/200A/300A)
-                                         | (uint32_t)response[10]);
+      slaveData->HVAlarmVoltage = (  (uint32_t)response[3] << 8    // Raw voltage in 0.01V
+                                   | (uint32_t)response[4])/100.0;
+      slaveData->LVAlarmVoltage = (  (uint32_t)response[5] << 8    // Raw voltage in 0.01V
+                                   | (uint32_t)response[6])/100.0;
+      slaveData->devaddr =        (  (uint32_t)response[7] << 8    // Raw address 0x00-0xf7
+                                   | (uint32_t)response[8]);
+      slaveData->devtype =        (  (uint32_t)response[9] << 8    // Shunt type 0x0000 - 0x0003 (100A/50A/200A/300A)
+                                   | (uint32_t)response[10]);
       // Record current time as _lastHoldingRead
-      _lastHoldingRead = millis();
       return true;
     }
-  float     md_PZEM017::getHighvoltAlarmValue()
+  float     md_PZEM017::getHighvoltAlarmValue(uint8_t slaveIdx)
     {
       //if(!getParameters())
       //    return NAN;
-      return _parameterValues.HVAlarmVoltage;
+      return _slavedata[slaveIdx].HVAlarmVoltage;
     }
-  float     md_PZEM017::getLowvoltAlarmValue()
+  float     md_PZEM017::getLowvoltAlarmValue(uint8_t slaveIdx)
     {
       //if(!getParameters())
       //    return NAN;
-      return _parameterValues.LVAlarmVoltage;
+      return _slavedata[slaveIdx].LVAlarmVoltage;
     }
-  uint16_t  md_PZEM017::getHoldingAddress()
-    {
-      //if(!getParameters())
-      //    return NAN;
-      return _parameterValues.address;
-    }
-  uint16_t  md_PZEM017::getShunttype()
+  uint16_t  md_PZEM017::getDevicetype(uint8_t slaveIdx)
     {
       //if(!getParameters())
       //  { return NAN; }
-      return _parameterValues.shunttype;
+      return _slavedata[slaveIdx].devtype;
     }
-  bool      md_PZEM017::resetEnergy()
+  bool      md_PZEM017::resetEnergy(uint8_t slaveIdx)
     {
       uint8_t buffer[] = {0x00, CMD_REST, 0x00, 0x00};
       uint8_t reply[5];
-      buffer[0] = _addr;
+      buffer[0] = _slavedata[slaveIdx].devaddr;
       setCRC(buffer, 4);
       _serial->write(buffer, 4);
       uint16_t length = receive(reply, 5);
@@ -336,7 +330,7 @@
       return true;
     }
   // Set alarm threshold in volts
-  bool      md_PZEM017::setShuntType(uint16_t type)
+  bool      md_PZEM017::setShuntType(uint16_t type, uint8_t slaveIdx)
     {
       bool ret = 0;
       if (type < 0 ) // Sanity check
@@ -344,28 +338,28 @@
       if (type > 3)
         { type = 3; }
       // Write shunt type to the holding register
-      ret = sendCmd8(CMD_WSR, WREG_SHUNT, type, true);
+      ret = sendCmd8(CMD_WSR, WREG_SHUNT, type, true, slaveIdx);
       return ret;
     }
-  bool      md_PZEM017::setHighvoltAlarm(uint16_t volts)
+  bool      md_PZEM017::setHighvoltAlarm(uint16_t volts, uint8_t slaveIdx)
     {
       if (volts < 500) // Sanity check
         { volts = 500; }
       if (volts > 34999) // Sanity check
         { volts = 34999; }
       // Write the volts threshold to the alarm register
-      if(!sendCmd8(CMD_WSR, WREG_HV_ALARM_THR, volts, true))
+      if(!sendCmd8(CMD_WSR, WREG_HV_ALARM_THR, volts, true, slaveIdx))
         { return false; }
       return true;
     }
-  bool      md_PZEM017::setLowvoltAlarm(uint16_t volts)
+  bool      md_PZEM017::setLowvoltAlarm(uint16_t volts, uint8_t slaveIdx)
     {
       if (volts < 100) // Sanity check
         { volts = 100; }
       if (volts > 34999) // Sanity check
         { volts = 34999; }
       // Write the volts threshold to the alarm register
-      if(!sendCmd8(CMD_WSR, WREG_LV_ALARM_THR, volts, true))
+      if(!sendCmd8(CMD_WSR, WREG_LV_ALARM_THR, volts, true, slaveIdx))
         { return false; }
       return true;
     }
@@ -491,6 +485,7 @@
               pList++;
             }
           for(uint16_t addr = 0x01; addr <= maxaddr; addr++)
+          //for(uint16_t addr = 0x01; addr <= 0xF8; addr++)
             {
               //Serial.println(addr);
               sendCmd8(CMD_RIR, 0x00, 0x01, false, addr);
@@ -498,17 +493,18 @@
                 { continue; }
               else
                 {
-                  getParameters(addr);
-                  SVAL("  Device on addr: ",(uint16_t )_parameterValues.address);
+                  RS485_SlaveData_t _data;
+                  getParameters(addr, &_data);
+                  SVAL("  Device on addr: ",(uint16_t )(_data.devaddr));
                   if (pList)
                     {
-                      *pList = _parameterValues.address;
+                      *pList = _data.devaddr;
                       pList++;
                       paddrList[0]++;
                     }
                   if (pshuntList)
                     {
-                      *pshuntList = _parameterValues.shunttype;
+                      *pshuntList = _data.devtype;
                       pshuntList++;
                     }
                 }
