@@ -88,33 +88,33 @@
                 bool setHwFlowCtrlMode(uint8_t mode = HW_FLOWCTRL_CTS_RTS, uint8_t threshold = 64);   // 64 is half FIFO Length
                 // Used to set RS485 modes such as UART_MODE_RS485_HALF_DUPLEX for Auto RTS function on ESP32
              */
-            md_PZEM017(HardwareSerial& port,  RS485_SlaveData_t* slaveData, uint8_t slaveCount, uint32_t config = SERIAL_8N1,
+            md_PZEM017(HardwareSerial& port, /* RS485_SlaveData_t* slaveData, uint8_t slaveCount,*/ uint32_t config = SERIAL_8N1,
                        uint8_t rtsPin = -1,   uint8_t rxPin = -1,  uint8_t txPin = -1);
             //md_PZEM017(HardwareSerial* port, uint8_t addr, uint8_t pin_dir = -1);
             ~md_PZEM017() {}
 
-            bool      updateValues(uint8_t slaveIdx = 0);    // Get most up to date values from device registers and cache them
-            float     voltage(uint8_t slaveIdx = 0);
-            float     current(uint8_t slaveIdx = 0);
-            float     power(uint8_t slaveIdx = 0);
-            float     energy(uint8_t slaveIdx = 0);
+            uint8_t   updateValues(RS485_SlaveData_t* slaveData);    // Get most up to date values from device registers and cache them
+            //float     voltage(RS485_SlaveData_t* slaveData);
+            //float     current(uint8_t slaveIdx = 0);
+            //float     power(uint8_t slaveIdx = 0);
+            //float     energy(uint8_t slaveIdx = 0);
             //----------------
-            void      config(uint8_t addr = PZEM_DEFAULT_ADDR, uint8_t slaveIdx = 0); // Init common to all constructors
+            uint8_t   config(RS485_SlaveData_t* slaveData, uint16_t addr = PZEM_DEFAULT_ADDR); // Init common to all constructors
+            uint16_t  getParameters(RS485_SlaveData_t* slaveData, uint16_t addr);
             //void      begin();
             void      preTransmission();
             void      postTransmission();
-            bool      getParameters(uint8_t slaveIdx = 0, RS485_SlaveData_t* slaveData = NULL );
-            uint8_t   getAddress(uint8_t slaveIdx = 0);
-            bool      setAddress(uint16_t slave_addr, uint8_t slaveIdx = 0);
-            bool      setHighvoltAlarm(uint16_t volts, uint8_t slaveIdx = 0);
-            float     getHighvoltAlarmValue(uint8_t slaveIdx = 0);
-            bool      isHighvoltAlarmOn(uint8_t slaveIdx = 0);
-            bool      setLowvoltAlarm(uint16_t volts, uint8_t slaveIdx = 0);
-            float     getLowvoltAlarmValue(uint8_t slaveIdx = 0);
-            bool      isLowvoltAlarmOn(uint8_t slaveIdx = 0);
-            bool      setShuntType(uint16_t type, uint8_t slaveIdx = 0);
-            uint16_t  getDevicetype(uint8_t slaveIdx = 0);
-            bool      resetEnergy(uint8_t slaveIdx = 0);
+            //uint8_t   getAddress(uint8_t slaveIdx = 0);
+            uint8_t   setAddress(uint16_t slave_addr, RS485_SlaveData_t* slaveData);
+            //bool      setHighvoltAlarm(uint16_t volts, uint8_t slaveIdx = 0);
+            //float     getHighvoltAlarmValue(uint8_t slaveIdx = 0);
+            //bool      isHighvoltAlarmOn(uint8_t slaveIdx = 0);
+            //bool      setLowvoltAlarm(uint16_t volts, uint8_t slaveIdx = 0);
+            //float     getLowvoltAlarmValue(uint8_t slaveIdx = 0);
+            //bool      isLowvoltAlarmOn(uint8_t slaveIdx = 0);
+            uint8_t   setShuntType(uint16_t type, RS485_SlaveData_t* slaveData);
+            //uint16_t  getDevicetype(uint8_t slaveIdx = 0);
+            uint8_t   resetEnergy(RS485_SlaveData_t* slaveData);
             uint8_t   search(uint8_t maxaddr = 0xF8, uint8_t* paddrList = NULL, uint8_t* pshuntList = NULL);
           private:
             Stream*            _serial      = NULL;;  // Serial interface
@@ -140,8 +140,8 @@
                   //  } _parameterValues; // Parameter values
                   //uint64_t  _lastInputRead; // Last time input values were updated
                   //uint64_t  _lastHoldingRead; // Last time input values were updated
+            uint8_t   sendCmd8(uint8_t cmd, uint16_t rAddr, uint16_t val, uint16_t slave_addr, bool check=false); // Send 8 byte command
             uint16_t  receive(uint8_t *resp, uint16_t len); // Receive len bytes into a buffer
-            bool      sendCmd8(uint8_t cmd, uint16_t rAddr, uint16_t val, bool check=false, uint16_t slave_addr=0xFFFF); // Send 8 byte command
             void      setCRC(uint8_t *buf, uint16_t len);           // Set the CRC for a buffer
             bool      checkCRC(const uint8_t *buf, uint16_t len);   // Check CRC of buffer
             uint16_t  CRC16(const uint8_t *data, uint16_t len); // Calculate CRC of buffer
