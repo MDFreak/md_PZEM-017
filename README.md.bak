@@ -1,22 +1,13 @@
 # md_PZEM-017   
 Arduino communication library modified 
-  from Peacefair PZEM-017 v1.0 Energy monitor
-    slightly modify from Jakub Mandula's PZEM-004T-v30 library (https://github.com/mandulaj/PZEM-004T-v30)
+    from Peacefair PZEM-017 v1.0 Energy monitor
+        slightly modify from Jakub Mandula's PZEM-004T-v30 library (https://github.com/mandulaj/PZEM-004T-v30)
 ***
 ### hardware and connections
-PZEM-003      - DC current/energy measurement (150V, 10A)
-PZEM-017      - DC current/energy measurement (150V, 50A/100A)  
-MAX485 module - used for communication between ESP32 - PZEM-0xx 
-#### pin connection to ESP
-	MAX485 	ESP32   
-	RO			UART2-RxD (16) - receiver out
-	RE-DE   
-	    
-
-#### connection to load
+MAX485 module is use for communication between ESP32 - PZEM-0xx 
 
 Make sure the device is connected to the 5v power!
-	
+
 
 
 

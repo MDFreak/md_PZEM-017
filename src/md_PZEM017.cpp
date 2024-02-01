@@ -48,7 +48,7 @@
     #define UPDATE_TIME     1000
     #define RESPONSE_SIZE   32
     #define READ_TIMEOUT_MS 200
-    #define WR_DELAY_MS     READ_TIMEOUT_MS + 20
+    #define WR_DELAY_MS     READ_TIMEOUT_MS + 50
     #define PZEM_BAUD_RATE  9600
     #ifndef DEBUG
         #define DEBUG       DEBUG_MODE
@@ -85,14 +85,9 @@
     {
       uint8_t _ret = false;
       //if(addr < 0x01 || addr > 0xF8) { addr = PZEM_DEFAULT_ADDR; } // Sanity check of address
-        S2VAL("PZEM.config &slaveData devaddr", (uint32_t)slaveData, addr);
       slaveData->devaddr = addr;
       _ret = getParameters(slaveData, addr);
-        S4VAL("    .config &slaveData devaddr devtype ULV", (uint32_t)slaveData, (uint16_t )(slaveData->devaddr),
-                                                            slaveData->devtype, slaveData->LVAlarmVoltage);
-      // Set initial lastRed time so that we read right away
-      //lastInputRead    = 0;
-      //lastInputRead   -= UPDATE_TIME;
+        S3VAL("     config devaddr", slaveData->devaddr, " devtype", slaveData->devtype);
       return _ret;
     }
   uint16_t  md_PZEM017::getParameters(RS485_SlaveData_t* slaveData, uint16_t addr)
@@ -124,7 +119,7 @@
             }
           else
             {
-              //S3VAL("ERROR trial", i, "getParameters.receive went wrong -> ret ", ret);
+              S3VAL("ERROR trial", i, "getParameters.receive went wrong -> ret ", ret);
             }
         }
      // Record current time as _lastHoldingRead
@@ -183,18 +178,19 @@
               slaveData->LVAlarms = ((uint32_t)response[17] << 8 | // Raw alarm value
                                      (uint32_t)response[18]);
               slaveData->lastInputRead = millis();
-              S4VAL("  updateValues U I P E", slaveData->voltage, slaveData->current, slaveData->power, slaveData->energy);
+              //S4VAL("  updateValues U I P E", slaveData->voltage, slaveData->current, slaveData->power, slaveData->energy);
               break;
             }
           else
             { // Something went wrong
-              S2VAL("  ERROR updateValues i ret ", i, ret);
+              ret = 0;
+              S3VAL("  ERROR updateValues i ", i, " addr ", slaveData->devaddr);
+                //for(int i = 0; i < sizeof(response); i++)
+                  //{
+                  //  Serial.println(response[i]);
+                  //}
             }
         }
-      //for(int i = 0; i < sizeof(response); i++)
-        //{
-        //  Serial.println(response[i]);
-        //}
       return ret;
     }
       /*
@@ -230,14 +226,14 @@
    * @param[in] addr New device address 0x01-0xF7
    * @return success
    */
-  uint8_t   md_PZEM017::setAddress(uint16_t slave_addr, RS485_SlaveData_t* slaveData)
+  uint8_t   md_PZEM017::setAddress(uint16_t old_addr, uint16_t new_addr)
     {
       //if(addr < 0x01 || addr > 0xF7) // sanity check
       //  { return false; }
       // Write the new address to the address register
-      if(!sendCmd8(CMD_WSR, WREG_ADDR, slaveData->devaddr, slave_addr, true))
+      if(!sendCmd8(CMD_WSR, WREG_ADDR, new_addr, old_addr, true))
         { return false; }
-      slaveData->devaddr = slave_addr; // If successful, update the current slave address
+      //slaveData->devaddr = slave_addr; // If successful, update the current slave address
       return true;
     }
       /* Get the current device address
@@ -260,12 +256,10 @@
   uint8_t   md_PZEM017::setShuntType(uint16_t type, RS485_SlaveData_t* slaveData)
     {
       uint8_t ret = 0;
-      if (type < 0 ) // Sanity check
-        { type = 0; }
-      if (type > 3)
-        { type = 3; }
       // Write shunt type to the holding register
       ret = sendCmd8(CMD_WSR, WREG_SHUNT, type, slaveData->devaddr, true);
+      if (ret) { S2VAL("  setShuntType ok    old new ", slaveData->devaddr, type); }
+      else     { S2VAL("  setShuntType ERR   old new ", slaveData->devaddr, type); }
       return ret;
     }
   uint8_t   md_PZEM017::resetEnergy(RS485_SlaveData_t* slaveData)
@@ -290,7 +284,7 @@
       uint8_t _cnt = 0;
       #if (not defined(PZEM017_DISABLE_SEARCH))
           uint8_t response[7];
-          if (minaddr < 5) { STXT("  md_PZEM017::search"); }
+          if (minaddr < 5) { STXT("   md_PZEM017::search"); }
           for(uint16_t addr = minaddr; addr <= maxaddr; addr++)
             {
               //S4VAL("    .search sendCmd8 addr com reg cnt", addr, CMD_RIR, 0, 1);
@@ -308,10 +302,11 @@
               else
                 {
                   RS485_SlaveData_t _data;
-                    //SVAL("  Device on addr: ",(uint16_t )(addr));
+                    SVAL("  Device on addr: ",(uint16_t )(addr));
                   getParameters(&_data, addr);
+                  S3VAL("   found devaddr", addr, " data.addr", _data.devaddr);
+                  SVAL("                     data.devtype", _data.devtype);
                   _cnt++;
-                  //S4VAL("  devaddr devtype ULV UHV ", (uint16_t )(_data.devaddr), _data.devtype, _data.LVAlarmVoltage, _data.HVAlarmVoltage );
                 }
             }
         #endif

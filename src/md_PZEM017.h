@@ -36,18 +36,20 @@
   Extended library for PZEM-017 v1.0 from Maxz Maxzerker
   Author: Martin Dorfner https://github.com/mdfreak
  */
-/* Description md_PZEM017 v0.1 ************
- ** additional features v0.01
-    - multiple slave usage with single RS485 bus      TODO ongoing
-      - shared Serial usage for all md_PZEM017 objects
+/* Description md_PZEM017 V0.1.0 ************
+ ** additional features V0.1.0
+    - multiple slave usage with single RS485 bus
+      - shared Serial usage for 2 md_PZEM017 objects
       - data structure change to slave specific structure
-        data static memory is to provide from main module via constructor
+        data static memory is provided from main module via constructor
       -> see class md_PZEM017 constructor
-    - introduce RTS Handshake using MAX485/RE-DE      v0.01
+    - introduce RTS Handshake using MAX485/RE-DE
       keep communication without RTS (default) -> RS485_rtsPin = 255
+
  ** TODO in future
     - introduce task used for measurement cycling
- ** changes to PZEM-017 v1.0 from Maxz Maxzerker
+
+ ** changes to PZEM-017 V0.1.0 from Maxz Maxzerker
     - remove SoftwareSerial - not necessary for ESP32 TODO ongoing
  */
 #pragma once
@@ -56,7 +58,7 @@
   #ifndef _MD_PZEM017_H_
       #define _MD_PZEM017_H_
 
-      #define MD_PZEM017_VERSION   0.01
+      #define MD_PZEM017_VERSION   "V0.1.0"
       #include <Arduino.h>
 
       // #define PZEM004_NO_SWSERIAL not used
@@ -110,7 +112,7 @@
             uint8_t   config(RS485_SlaveData_t* slaveData, uint16_t addr = PZEM_DEFAULT_ADDR); // Init common to all constructors
             uint16_t  getParameters(RS485_SlaveData_t* slaveData, uint16_t addr);
             uint8_t   updateValues(RS485_SlaveData_t* slaveData);    // Get most up to date values from device registers and cache them
-            uint8_t   setAddress(uint16_t slave_addr, RS485_SlaveData_t* slaveData);
+            uint8_t   setAddress(uint16_t old_addr, uint16_t new_addr);
             uint8_t   setShuntType(uint16_t type, RS485_SlaveData_t* slaveData);
             uint8_t   resetEnergy(RS485_SlaveData_t* slaveData);
             uint8_t   search(uint8_t minaddr, uint8_t maxaddr = 0xF8, uint8_t autoStop = false);
