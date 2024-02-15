@@ -380,7 +380,8 @@
         preTransmission();
         _serial->write(sendBuffer, 8); // send frame
         _serial->flush();
-        usleep(1000);
+        delayMicroseconds(140);
+        //usleep(1000);
         postTransmission();
         if(check)
           {

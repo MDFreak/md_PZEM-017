@@ -20,22 +20,22 @@
   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 /* Authors *********************************
- ******************************************
-  PZEM-004Tv30.h
-  Interface library for the upgraded version of PZEM-004T v3.0
-  Based on the PZEM004T library by @olehs https://github.com/olehs/PZEM004T
-  Author: Jakub Mandula https://github.com/mandulaj
- ******************************************
-  PZEM-017Tv1.h
-  Interface library for PZEM-017 v1.0
-  Based on the PZEM004T library by Jakub Mandula https://github.com/mandulaj
-  Author: Maxz Maxzerker https://github.com/maxzerker
- ******************************************
-  md_PZEM017.h
-  Interface library for PZEM-003, PZEM-017
-  Extended library for PZEM-017 v1.0 from Maxz Maxzerker
-  Author: Martin Dorfner https://github.com/mdfreak
- */
+     ******************************************
+      PZEM-004Tv30.h
+      Interface library for the upgraded version of PZEM-004T v3.0
+      Based on the PZEM004T library by @olehs https://github.com/olehs/PZEM004T
+      Author: Jakub Mandula https://github.com/mandulaj
+     ******************************************
+      PZEM-017Tv1.h
+      Interface library for PZEM-017 v1.0
+      Based on the PZEM004T library by Jakub Mandula https://github.com/mandulaj
+      Author: Maxz Maxzerker https://github.com/maxzerker
+     ******************************************
+      md_PZEM017.h
+      Interface library for PZEM-003, PZEM-017
+      Extended library for PZEM-017 v1.0 from Maxz Maxzerker
+      Author: Martin Dorfner https://github.com/mdfreak
+     */
 /* Description md_PZEM017 V0.1.0 ************
  ** additional features V0.1.0
     - multiple slave usage with single RS485 bus
@@ -52,6 +52,10 @@
  ** changes to PZEM-017 V0.1.0 from Maxz Maxzerker
     - remove SoftwareSerial - not necessary for ESP32 TODO ongoing
  */
+
+
+// TODO This project si stopped because Multi-HW does not run stable
+
 #pragma once
 
 #if defined(USE_PZEM017_RS485)
